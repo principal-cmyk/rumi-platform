@@ -4,6 +4,7 @@ const { OPENAI_API_KEY } = require('../utils/constants');
 const { logToFile } = require('../utils/logger');
 const supabase = require('../config/supabase');
 const { ownCoaching } = require('./coaching/own-coaching');
+const { appendVisualEvidence } = require('../config/coaching-video');
 const {
   CLASSROOM_MARKS_BASE,
   CLASSROOM_MARKS_WITH_LP,
@@ -349,9 +350,14 @@ CONVERSATIONAL FRAMEWORK: S.T.I.C.K.S. PRINCIPLES
         },
         {
           role: 'user',
-          content: useFrameworkModule
-            ? framework.buildAnalysisPrompt(transcript, metadata, lessonPlanStructured, null)
-            : this._buildAnalysisPrompt(transcript, metadata, lessonPlanStructured)
+          // Stills from a lesson video reach every rubric through here. Audio sessions have none, and their prompt
+          // stays byte-identical.
+          content: appendVisualEvidence(
+            useFrameworkModule
+              ? framework.buildAnalysisPrompt(transcript, metadata, lessonPlanStructured, metadata.visualEvidence || null)
+              : this._buildAnalysisPrompt(transcript, metadata, lessonPlanStructured),
+            metadata.visualEvidence,
+          )
         }
       ];
 
@@ -719,12 +725,15 @@ CONVERSATIONAL FRAMEWORK: S.T.I.C.K.S. PRINCIPLES
         { maxTokens: 1500 },
       );
       const parsed = this._safeJsonParse(content);
-      return { question: (parsed.question || '').trim(), question_en: parsed.question_en, model_used };
+      // The prompt asks for an English version of every question, so an English teacher gets exactly that, even if
+      // the model wrote its main field in something else.
+      const text = profile.language === 'English' ? (parsed.question_en || parsed.question) : parsed.question;
+      return { question: (text || '').trim(), question_en: parsed.question_en, model_used };
     };
     let { question, model_used } = await generate(baseSys);
     let violations = validateQuestion(question, corpus, firstName, profile);
     if (violations.length) {
-      const fixSys = `${baseSys}\n\n═══ FIX THESE PROBLEMS ═══\nYour previous attempt violated: ${violations.join(', ')}. Rewrite the question: ≤65 words, NO honorifics, NO raw MM:SS times, NO "Q1/Q2" meta, ONLY child names from the corpus, write ENTIRELY in ${profile.script}, spell every number as a word.`;
+      const fixSys = `${baseSys}\n\n═══ FIX THESE PROBLEMS ═══\nYour previous attempt violated: ${violations.join(', ')}. Rewrite the question: ≤65 words, NO honorifics, NO raw MM:SS times, NO "Q1/Q2" meta, ONLY child names from the corpus, write ENTIRELY in ${profile.language === 'English' ? 'English' : profile.script}, spell every number as a word.`;
       const retry = await generate(fixSys);
       const retryViolations = validateQuestion(retry.question, corpus, firstName, profile);
       if (!retryViolations.length) {

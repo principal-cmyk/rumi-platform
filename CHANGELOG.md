@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Classroom coaching accepts 10 to 15 minute videos.** Rumi coaches on the speech and on still frames sampled across the lesson, for every framework. See [Classroom videos](docs/features/coaching.md#classroom-videos).
+
+**`ALLOWED_LANGUAGES` narrows a deployment to the languages its teachers use**, and Kiswahili is now a supported language with speech recognition hints.
+
+Also fixed: reflection questions for English teachers could come out in another language or use a sample name from the prompt, and a missing speech key stopped a coaching session after scoring had succeeded.
+
+Also fixed: on the linked-device channel, classroom audio could never reach the worker, because the recording lived only in the bot process's memory. It is now handed over on disk.
+
+Also fixed, on the linked-device channel: the bot stopped hearing messages after its first reconnect, while still reporting itself connected, and the separate worker could send nothing because it could not share the WhatsApp session. The worker now runs inside the bot there, and `sqs-worker.js` started on its own exits with an explanation.
+
 **The exam checker reads and grades with one vision model, in two calls, and needs no key of its own.**
 
 > **Upgrade notes.** Existing Supabase deployments: run `node infrastructure/scripts/migrate.js` (migration

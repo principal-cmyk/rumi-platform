@@ -138,6 +138,7 @@ class AnalysisProcessorService {
         lessonPlanStatus: session.lesson_plan_extraction_status || null,
         lessonPlanSubject: session.lesson_plan_structured?.subject || null,
         lessonPlanTopic: session.lesson_plan_structured?.topic || null,
+        visualEvidence: session.conversation_state?.video_observations || null,
         ...(isObservation ? { teacherName: session.users.first_name || null } : {})
       };
 

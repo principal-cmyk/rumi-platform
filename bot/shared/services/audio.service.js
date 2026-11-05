@@ -37,12 +37,18 @@ ffmpeg.setFfprobePath(ffprobePath);
 // Soniox-supported languages (ISO 639-1, region-stripped before sending).
 // Indian languages (hi/bn/mr/te/ta/kn) are supported by Soniox and route here
 // automatically since they are absent from MMS_LANGUAGES below.
-const SONIOX_LANGUAGES = ['en', 'ur', 'ar', 'es', 'ta', 'ta-LK', 'pa', 'pa-PK', 'hi', 'bn', 'mr', 'te', 'kn', 'fr'];
+const SONIOX_LANGUAGES = ['en', 'ur', 'ar', 'es', 'ta', 'ta-LK', 'pa', 'pa-PK', 'hi', 'bn', 'mr', 'te', 'kn', 'fr', 'sw'];
 
 // Multi-language auto-detect hints for Soniox, used when no explicit language is
 // set (coaching / general voice notes). Region-stripped ISO 639-1 codes, only
 // languages Soniox supports. Exposed on the class for regression tests.
-const SONIOX_AUTODETECT_HINTS = ['en', 'ur', 'es', 'ar', 'pa', 'ta', 'hi', 'bn', 'mr', 'te', 'kn', 'fr'];
+const SONIOX_AUTODETECT_HINTS = ['en', 'ur', 'es', 'ar', 'pa', 'ta', 'hi', 'bn', 'mr', 'te', 'kn', 'fr', 'sw'];
+
+/** The hints above, narrowed to ALLOWED_LANGUAGES: hinting a language a school never uses only invites misreadings. */
+function autodetectHints() {
+  const allowed = require('../config/supported-languages').allowedLanguages().map((c) => c.split('-')[0]);
+  return SONIOX_AUTODETECT_HINTS.filter((hint) => allowed.includes(hint));
+}
 const MMS_LANGUAGES = {
   'bal-PK': 'bcc-script_arabic',  // Southern Balochi with Arabic script
   'sd-PK': 'snd',                  // Sindhi
@@ -119,7 +125,7 @@ class AudioService {
       // e.g. coaching audio). Covers PK + India scripts for a shared deployment.
       const languageHints = normalizedLanguage
         ? [normalizedLanguage]
-        : SONIOX_AUTODETECT_HINTS;
+        : autodetectHints();
 
       const requestBody = {
         file_id: fileId,
@@ -1145,6 +1151,7 @@ class AudioService {
 // Expose the Soniox auto-detect hint list for regression tests (see
 // tests/language/french-stt.test.js) without loading the transcription path.
 AudioService.SONIOX_AUTODETECT_HINTS = SONIOX_AUTODETECT_HINTS;
+AudioService.autodetectHints = autodetectHints;
 
 // The two routing tables that decide which engine hears which language. Same
 // reason as the line above — read by callers that want to DESCRIBE the routing

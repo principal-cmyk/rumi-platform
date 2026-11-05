@@ -1347,6 +1347,8 @@ class WhatsAppService {
         logToFile('Language picker: region lookup failed, using default set', { error: e.message });
       }
 
+      codes = require('../../config/supported-languages').offeredLanguages(codes);
+
       const MAX_LANG_ROWS = 9; // 10 total minus the Auto-detect row
       if (codes.length > MAX_LANG_ROWS) {
         logToFile('Language picker: truncating to WhatsApp 10-row limit', { region, shown: MAX_LANG_ROWS, total: codes.length });

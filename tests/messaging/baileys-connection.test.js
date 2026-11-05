@@ -88,6 +88,18 @@ describe('baileys-connection', () => {
     expect(makeWASocket).not.toHaveBeenCalled();
   });
 
+  it('announces each socket it creates, because a listener left on an old one goes silently deaf', async () => {
+    jest.resetModules();
+    const { sock } = mockBaileysPackage();
+    const conn = require('../../bot/shared/services/messaging/baileys-connection');
+    const announced = jest.fn();
+    conn.events.on('socket', announced);
+    conn.getSocket().catch(() => {});
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(announced).toHaveBeenCalledWith(sock);
+  });
+
   it('getSocket() resolves only once "open" fires — not as soon as makeWASocket() returns', async () => {
     jest.resetModules();
     const { makeWASocket, sockEventHandlers } = mockBaileysPackage();
@@ -270,6 +282,90 @@ describe('baileys-connection', () => {
     await Promise.resolve();
 
     expect(makeWASocket).toHaveBeenCalledTimes(2);
+  });
+
+  describe('reconnect pacing', () => {
+    // Live: a network drop produced about 20,000 reconnects in a few minutes, and an 80 MB log. A storm like that
+    // from one number is what gets a number flagged. The first retry stays instant, because WhatsApp forces one
+    // right after pairing.
+    const flush = async () => { for (let i = 0; i < 25; i += 1) await Promise.resolve(); };
+    const drop = () => ({ connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } });
+
+    afterEach(() => jest.useRealTimers());
+
+    it('backs off from instant to a one-minute ceiling', () => {
+      jest.resetModules();
+      mockBaileysPackage();
+      const { reconnectDelayMs } = require('../../bot/shared/services/messaging/baileys-connection');
+      expect([0, 1, 2, 3, 6, 7, 50].map(reconnectDelayMs)).toEqual([0, 1000, 2000, 4000, 32000, 60000, 60000]);
+    });
+
+    it('waits between repeated failures instead of hammering WhatsApp', async () => {
+      jest.useFakeTimers();
+      jest.resetModules();
+      const { makeWASocket, sockEventHandlers } = mockBaileysPackage();
+      const conn = require('../../bot/shared/services/messaging/baileys-connection');
+      await connectAndOpen(conn, sockEventHandlers);
+      expect(makeWASocket).toHaveBeenCalledTimes(1);
+
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      expect(makeWASocket).toHaveBeenCalledTimes(2); // first retry: instant
+
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      expect(makeWASocket).toHaveBeenCalledTimes(2); // second: waits
+      await jest.advanceTimersByTimeAsync(999);
+      expect(makeWASocket).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(2);
+      await flush();
+      expect(makeWASocket).toHaveBeenCalledTimes(3);
+    });
+
+    it('a successful connection resets the pacing', async () => {
+      jest.useFakeTimers();
+      jest.resetModules();
+      const { makeWASocket, sockEventHandlers } = mockBaileysPackage();
+      const conn = require('../../bot/shared/services/messaging/baileys-connection');
+      await connectAndOpen(conn, sockEventHandlers);
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      sockEventHandlers['connection.update']({ connection: 'open' });
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      expect(makeWASocket).toHaveBeenCalledTimes(3); // instant again
+    });
+
+    it('a caller during the pause waits for the reconnect rather than opening a second connection', async () => {
+      jest.useFakeTimers();
+      jest.resetModules();
+      const { makeWASocket, sockEventHandlers } = mockBaileysPackage();
+      const conn = require('../../bot/shared/services/messaging/baileys-connection');
+      await connectAndOpen(conn, sockEventHandlers);
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      conn.getSocket().catch(() => {});
+      await flush();
+      expect(makeWASocket).toHaveBeenCalledTimes(2);
+    });
+
+    it('shutting down during the pause does not reconnect', async () => {
+      jest.useFakeTimers();
+      jest.resetModules();
+      const { makeWASocket, sockEventHandlers } = mockBaileysPackage();
+      const conn = require('../../bot/shared/services/messaging/baileys-connection');
+      await connectAndOpen(conn, sockEventHandlers);
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      sockEventHandlers['connection.update'](drop());
+      await flush();
+      const closing = conn.close({ flushMs: 1, pendingTimeoutMs: 1 });
+      await jest.advanceTimersByTimeAsync(5000);
+      await closing;
+      expect(makeWASocket).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('a close BEFORE ever opening chains this attempt\'s promise onto the internal reconnect, instead of hanging forever', async () => {

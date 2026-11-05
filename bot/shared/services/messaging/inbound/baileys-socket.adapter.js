@@ -168,6 +168,7 @@ function hasDispatchableContent(waMessage) {
     || content.imageMessage
     || content.audioMessage
     || content.documentMessage
+    || (content.videoMessage && !content.videoMessage.gifPlayback)
   );
 }
 
@@ -432,6 +433,28 @@ async function mapToMetaShape(waMessage, downloadMediaMessage, sock) {
     };
   }
 
+  // A lesson video, sent as a video or as a file. Length and size are known before the download, so a clip that could
+  // never be coached is not pulled into memory; the handler explains why, and measures a file that reports no length.
+  const videoContent = content.videoMessage
+    || ((content.documentMessage?.mimetype || '').startsWith('video/') ? content.documentMessage : null);
+  if (videoContent) {
+    const { isCoachingVideoLength, maxVideoBytes } = require('../../../config/coaching-video');
+    const duration = Number(videoContent.seconds) || 0;
+    const fileSize = Number(videoContent.fileLength) || 0;
+    const worthDownloading = (!duration || isCoachingVideoLength(duration)) && fileSize <= maxVideoBytes();
+    const buffer = worthDownloading ? await downloadMediaMessage(waMessage, 'buffer', {}) : null;
+    return {
+      metaMessage: {
+        ...base,
+        type: 'video',
+        video: {
+          id, mime_type: videoContent.mimetype, duration, file_size: fileSize, caption: videoContent.caption || '',
+        },
+      },
+      mediaToCache: buffer ? { id, buffer, mimetype: videoContent.mimetype } : null,
+    };
+  }
+
   if (content.documentMessage) {
     const buffer = await downloadMediaMessage(waMessage, 'buffer', {});
     return {
@@ -481,9 +504,8 @@ function buildSyntheticResponse() {
  */
 async function attach(dispatch) {
   const { downloadMediaMessage } = await require('../baileys-lib').loadBaileys();
-  const sock = await connection.getSocket();
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  const onMessages = (sock) => async ({ messages }) => {
     for (const waMessage of messages) {
       try {
         // Harvest the @lid->phone mapping FIRST, from every delivery — the
@@ -519,9 +541,20 @@ async function attach(dispatch) {
         logToFile('❌ Baileys inbound: error processing message', { error: error.message, stack: error.stack });
       }
     }
-  });
+  };
 
-  logToFile('✅ Baileys inbound listener attached', {});
+  // The first socket is reported both ways, so each one is tracked: a socket listened to twice answers every
+  // message twice. Subscribed before getSocket(), so a reconnect during startup is not missed.
+  const listening = new WeakSet();
+  const listenTo = (sock) => {
+    if (listening.has(sock)) return;
+    listening.add(sock);
+    sock.ev.on('messages.upsert', onMessages(sock));
+    logToFile('✅ Baileys inbound listener attached', {});
+  };
+
+  if (connection.events) connection.events.on('socket', listenTo);
+  listenTo(await connection.getSocket());
 }
 
 module.exports = {

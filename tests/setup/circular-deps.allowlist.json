@@ -11,7 +11,7 @@
       "bot/shared/services/elevenlabs.service.js",
       "bot/shared/services/audio.service.js"
     ],
-    "reason": "Pre-existing cross-dependency between the TTS service and the audio-processing service. Both lazy-require each other inside their respective methods (audio.service.js does it 4\u00d7 for different TTS variants). Works at runtime."
+    "reason": "Pre-existing cross-dependency between the TTS service and the audio-processing service. Both lazy-require each other inside their respective methods (audio.service.js does it 4× for different TTS variants). Works at runtime."
   },
   {
     "cycle": [
@@ -27,5 +27,13 @@
       "bot/shared/services/messaging/matrix-channel.service.js"
     ],
     "reason": "Reply-to-the-room-you-were-messaged-in fix: matrix-channel.service.js#resolveDmRoomId lazy-requires the adapter inside the function body to read its last-inbound-room map; the adapter already lazy-required the channel service the same way (mapAttachmentToMetaShape, sendWelcomeDm) before this change. Both edges resolve at call time, after both modules have finished their own top-level evaluation, so module load order never deadlocks."
+  },
+  {
+    "cycle": [
+      "bot/whatsapp-bot.js",
+      "bot/workers/inbound-message.worker.js",
+      "bot/workers/sqs-worker.js"
+    ],
+    "reason": "On a linked WhatsApp device the worker runs inside the bot (worker-placement.js): whatsapp-bot.js lazy-requires sqs-worker.js in startEmbeddedWorkerIfNeeded() at server start, and inbound-message.worker.js lazy-requires whatsapp-bot.js inside its job handler. Both run after every module has finished loading."
   }
 ]

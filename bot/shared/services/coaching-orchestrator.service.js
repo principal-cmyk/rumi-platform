@@ -34,8 +34,8 @@ class CoachingOrchestrator {
    * Initiate a new coaching session
    * ✅ Delegated to CoachingSessionService
    */
-  static async initiateCoachingSession(userId, sessionId, audioId, from, audioDuration) {
-    return await CoachingSessionService.initiateSession(userId, sessionId, audioId, from, audioDuration);
+  static async initiateCoachingSession(userId, sessionId, audioId, from, audioDuration, options = {}) {
+    return await CoachingSessionService.initiateSession(userId, sessionId, audioId, from, audioDuration, options);
   }
 
   /**

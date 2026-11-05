@@ -25,9 +25,10 @@ class CoachingSessionService {
    * @param {string} audioId - WhatsApp audio media ID
    * @param {string} from - User's WhatsApp phone number
    * @param {number} audioDuration - Audio duration in seconds
+   * @param {{mediaKind?: 'video'}} [options] - a lesson video is marked so the worker reads its stills too
    * @returns {Promise<object|null>} Created coaching session or null if user not registered
    */
-  static async initiateSession(userId, sessionId, audioId, from, audioDuration) {
+  static async initiateSession(userId, sessionId, audioId, from, audioDuration, options = {}) {
     try {
       logToFile('Initiating coaching session', {
         userId,
@@ -53,6 +54,8 @@ class CoachingSessionService {
       // so a refused one never reaches transcription or a model.
       if (!(await DailyCaps.allowOrExplain(user, 'coaching', from))) return null;
 
+      const isVideo = options.mediaKind === 'video';
+
       // Create coaching_sessions record
       const { data: coachingSession, error: createError } = await supabase
         .from('coaching_sessions')
@@ -61,6 +64,7 @@ class CoachingSessionService {
           session_id: sessionId,
           audio_id: audioId,
           audio_duration_seconds: audioDuration,
+          ...(isVideo ? { audio_format: 'video' } : {}),
           // The exact channel identifier this request came in on (a bare
           // WhatsApp phone number, or "slack:<id>") — captured now because
           // it's never re-derivable correctly later: a users.phone_number
@@ -94,7 +98,9 @@ class CoachingSessionService {
       });
 
       // Send confirmation message with buttons
-      const confirmationMessage = `I detected a ${Math.round(audioDuration / 60)}-minute audio recording.\n\nIs this classroom audio you'd like me to analyze using research-based pedagogical frameworks?`;
+      const confirmationMessage = isVideo
+        ? `I received a ${Math.round(audioDuration / 60)}-minute video.\n\nIs this a classroom lesson you'd like me to analyze? I'll listen to the lesson and look at moments from the video, using research-based pedagogical frameworks.`
+        : `I detected a ${Math.round(audioDuration / 60)}-minute audio recording.\n\nIs this classroom audio you'd like me to analyze using research-based pedagogical frameworks?`;
 
       await WhatsAppService.sendInteractiveButtons(from, {
         body: confirmationMessage,
@@ -134,6 +140,14 @@ class CoachingSessionService {
             completed_at: new Date().toISOString()
           })
           .eq('id', coachingSessionId);
+
+        // Declined: nothing will read the stored recording now, and it may show children.
+        const { data: declined } = await supabase
+          .from('coaching_sessions')
+          .select('audio_id')
+          .eq('id', coachingSessionId)
+          .maybeSingle();
+        if (declined?.audio_id) require('./coaching-media-store').remove(declined.audio_id);
 
         // Resolve teacher language for the localised cancellation message.
         const { data: userRow } = await supabase

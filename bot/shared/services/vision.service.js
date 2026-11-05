@@ -110,6 +110,8 @@ async function analyzeImage(imageBuffer, mimeType, options = {}) {
     detail = CONFIG.defaultDetail,
     language = 'en',
     context = {},
+    systemPrompt: systemPromptOverride = null,
+    temperature = 0.7,
   } = options;
 
   logEvent('vision.analysis.started', {
@@ -131,7 +133,7 @@ async function analyzeImage(imageBuffer, mimeType, options = {}) {
   try {
     const base64Image = imageBuffer.toString('base64');
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
-    const systemPrompt = buildSystemPrompt(language, context);
+    const systemPrompt = systemPromptOverride || buildSystemPrompt(language, context);
 
     const response = await openai.chat.completions.create({
       model: CONFIG.analysisModel,
@@ -149,7 +151,7 @@ async function analyzeImage(imageBuffer, mimeType, options = {}) {
         },
       ],
       max_tokens: CONFIG.maxTokens,
-      temperature: 0.7,
+      temperature,
     });
 
     const result = {

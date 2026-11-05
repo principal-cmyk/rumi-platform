@@ -41,6 +41,9 @@ const LANGUAGES = {
   'ta-IN': { native: 'தமிழ்', english: 'Tamil' },
   kn: { native: 'ಕನ್ನಡ', english: 'Kannada' },
 
+  // East Africa (conversation only)
+  sw: { native: 'Kiswahili', english: 'Kiswahili' },
+
   // Other
   ar: { native: 'العربية', english: 'Arabic' },
   es: { native: 'Español', english: 'Spanish' },
@@ -60,6 +63,35 @@ const RTL_LANGUAGES = ['ur', 'ar', 'pa-PK', 'sd-PK', 'ps-PK', 'bal-PK'];
  */
 function isSupported(code) {
   return typeof code === 'string' && SUPPORTED_LANGUAGES.includes(code);
+}
+
+/**
+ * ALLOWED_LANGUAGES (comma-separated codes) narrows a deployment to the languages its teachers use. Unset, or with no
+ * recognisable code in it, every language stays available: a typo must not lock teachers out.
+ * @returns {string[]} the codes this deployment may use, in the order given
+ */
+function allowedLanguages(env = process.env) {
+  const listed = String(env.ALLOWED_LANGUAGES || '').split(',').map((c) => c.trim()).filter(isSupported);
+  return listed.length > 0 ? listed : SUPPORTED_LANGUAGES;
+}
+
+function isRestricted(env = process.env) {
+  return allowedLanguages(env) !== SUPPORTED_LANGUAGES;
+}
+
+function isAllowed(code, env = process.env) {
+  return allowedLanguages(env).includes(code);
+}
+
+/** The code if this deployment uses it, otherwise the default. Unrestricted, any value passes through untouched. */
+function restrictLanguage(code, env = process.env) {
+  if (!isRestricted(env)) return code;
+  return isAllowed(code, env) ? code : DEFAULT_LANGUAGE;
+}
+
+/** What a language menu should offer: its own list, or the deployment's when that is narrowed. */
+function offeredLanguages(codes, env = process.env) {
+  return isRestricted(env) ? allowedLanguages(env) : codes;
 }
 
 /**
@@ -111,6 +143,11 @@ module.exports = {
   DEFAULT_LANGUAGE,
   RTL_LANGUAGES,
   isSupported,
+  allowedLanguages,
+  isRestricted,
+  isAllowed,
+  restrictLanguage,
+  offeredLanguages,
   getLabel,
   getEnglishName,
   toDropdown,

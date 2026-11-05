@@ -145,11 +145,17 @@ class ReflectiveConversationService {
         questionLength: question.length
       });
 
-      // Generate voice from question text
-      const voiceBuffer = await ElevenLabsService.generateSpeechForLanguage(question, languageCode);
-
-      // Send voice question to teacher
-      await WhatsAppService.sendAudio(from, voiceBuffer, TEMP_DIR);
+      // Send the question as a voice note. Voice is optional, so without it the question is typed: scoring has already
+      // succeeded by now, and a missing speech key must not cost the teacher the rest of their session.
+      try {
+        const voiceBuffer = await ElevenLabsService.generateSpeechForLanguage(question, languageCode);
+        await WhatsAppService.sendAudio(from, voiceBuffer, TEMP_DIR);
+      } catch (voiceError) {
+        logToFile('⚠️  Voice generation failed for reflective question, sending text', {
+          coachingSessionId, questionNumber, error: voiceError.message,
+        });
+        await WhatsAppService.sendMessage(from, question);
+      }
 
       // Update conversation state - STORE THE QUESTION
       const existingQuestions = session.conversation_state.questions || [];

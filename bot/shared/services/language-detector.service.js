@@ -1,6 +1,6 @@
 const { logToFile } = require('../utils/logger');
 const { getClient } = require('./llm-client');
-const { SUPPORTED_LANGUAGES } = require('../config/supported-languages');
+const { SUPPORTED_LANGUAGES, restrictLanguage } = require('../config/supported-languages');
 
 // Initialize OpenAI client
 const openai = getClient();
@@ -301,13 +301,13 @@ Language code:`;
 
       // Validate it's in our supported list
       if (VALID_LANGUAGE_CODES.includes(normalizedCode)) {
-        return normalizedCode;
+        return restrictLanguage(normalizedCode);
       }
 
       // If GPT returned something unexpected, fall back to 'ur' for Arabic script
       // or 'en' for Roman script
       const hasArabicScript = /[\u0600-\u06FF]/.test(transcript);
-      return hasArabicScript ? 'ur' : 'en';
+      return restrictLanguage(hasArabicScript ? 'ur' : 'en');
 
     } catch (error) {
       logToFile('GPT language detection error', {
@@ -377,5 +377,9 @@ Language code:`;
     return mappings[lowerCode] || lowerCode;
   }
 }
+
+// A language outside ALLOWED_LANGUAGES must not switch a conversation, whatever script the message is in.
+const detectFromText = LanguageDetectorService.detectLanguage.bind(LanguageDetectorService);
+LanguageDetectorService.detectLanguage = (text) => restrictLanguage(detectFromText(text));
 
 module.exports = LanguageDetectorService;

@@ -657,6 +657,7 @@ async function resolveLanguageOptions(region = null) {
   } catch (error) {
     logToFile('Baileys language picker: region lookup failed, using default set', { error: error.message });
   }
+  codes = require('../../config/supported-languages').offeredLanguages(codes);
 
   return [
     { id: 'lang_auto', title: 'Auto-detect', description: 'Let me detect your language automatically' },
@@ -672,7 +673,7 @@ async function sendLanguageSelectionList(to, currentLanguage = 'en', region = nu
   try {
     const options = await resolveLanguageOptions(region);
     const text = renderOptionsAsText({
-      header: 'Select Language / زبان منتخب کریں',
+      header: require('../../config/supported-languages').isAllowed('ur') ? 'Select Language / زبان منتخب کریں' : 'Select Language',
       body: 'Choose your preferred language. I will respond in this language for all conversations.',
       footer: 'You can change this anytime by typing /language',
       options,

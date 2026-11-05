@@ -77,7 +77,16 @@ class TranscriptionProcessorService {
         throw new Error('Audio ID not found in payload');
       }
 
-      const audioData = await WhatsAppService.downloadMedia(audioId);
+      // The stored copy first: on the linked-device channel the worker cannot fetch by id. A miss means the bot and
+      // worker do not share a disk, and the channel has it (a video's audio and stills are then extracted here).
+      const isVideo = session.audio_format === 'video';
+      const CoachingMediaStore = require('./coaching-media-store');
+      let media = CoachingMediaStore.load(audioId);
+      if (!media) {
+        const raw = await WhatsAppService.downloadMedia(audioId);
+        media = isVideo ? await require('./video-intake.service').prepare(raw) : { audio: raw, frames: [] };
+      }
+      const audioData = media.audio;
       fs.writeFileSync(tempAudioPath, audioData);
 
       logToFile('Audio downloaded from WhatsApp', {
@@ -163,7 +172,7 @@ class TranscriptionProcessorService {
       // Update database with transcription data and tokens for enhanced viewer
       const updateData = {
         audio_url: r2Url,
-        audio_format: 'ogg',
+        audio_format: isVideo ? 'video' : 'ogg',
         audio_size_bytes: audioData.length,
         transcript_text: transcriptionResult.transcript,
         transcript_language: transcriptionResult.language,
@@ -202,6 +211,7 @@ class TranscriptionProcessorService {
       if (isObservation) {
         const CoachingJobQueueService = require('./coaching-job-queue.service');
         await CoachingJobQueueService.queueAnalysis(coachingSessionId, { from });
+        CoachingMediaStore.remove(audioId);
         removePrivateTemp(temp);
         logToFile('✅ Transcription complete (observation) — analysis queued', { coachingSessionId });
         return;
@@ -238,6 +248,23 @@ class TranscriptionProcessorService {
         logToFile('⚠️ Agency follow-up check failed (non-critical)', { error: agencyError.message });
       }
 
+      // A video has already shown the classroom: describe its stills instead of asking for a photo. The notes are
+      // best-effort, and the lesson-plan step reads conversation_state fresh, so it keeps them.
+      if (isVideo) {
+        const { describeFrames } = require('./video-intake.service');
+        const videoObservations = await describeFrames(media.frames);
+        await CoachingSessionService.updateConversationState(coachingSessionId, { video_observations: videoObservations });
+        await CoachingSessionService.updateStatus(coachingSessionId, 'awaiting_photo');
+        const { advanceToLessonPlanStep } = require('./lp-coaching/lp-step.service');
+        await advanceToLessonPlanStep({ sessionId: coachingSessionId, from });
+        CoachingMediaStore.remove(audioId);
+        removePrivateTemp(temp);
+        logToFile('✅ Transcription processing complete (video)', {
+          coachingSessionId, frames: media.frames.length, hasVisualNotes: !!videoObservations,
+        });
+        return;
+      }
+
       // Phase 3: Ask about classroom photo FIRST, before LP question
       const { buildPhotoPrompt } = require('./classroom-photo/photo-prompt.service');
       const userLanguage = await getUserLanguage(session.user_id) || 'en';
@@ -252,6 +279,7 @@ class TranscriptionProcessorService {
       await CoachingSessionService.updateStatus(coachingSessionId, 'awaiting_photo');
 
       // Clean up temp file
+      CoachingMediaStore.remove(audioId);
       removePrivateTemp(temp);
 
       logToFile('✅ Transcription processing complete', { coachingSessionId });

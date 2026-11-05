@@ -523,6 +523,13 @@ async function handleWebhookPost(req, res) {
       if (!answeredAsk) await handleTextMessage(message, from, messageBody, user);
     } else if (messageType === 'audio' || messageType === 'voice') {
       await handleVoiceMessage(message, from, user);
+    } else if (messageType === 'video' && message.video) {
+      await require('./shared/handlers/video-message.handler').handleVideoMessage(message, from, user);
+    } else if (messageType === 'document' && (message.document?.mime_type || '').startsWith('video/')) {
+      // Meta caps a WhatsApp video well below a lesson's size, so a lesson often arrives as a file.
+      await require('./shared/handlers/video-message.handler').handleVideoMessage(
+        { ...message, video: { id: message.document.id, mime_type: message.document.mime_type } }, from, user,
+      );
     } else if (messageType === 'image' && message.image) {
       // Handle image messages for multimodal vision analysis
       await handleImageMessage(message, from, user);
@@ -1785,6 +1792,8 @@ async function handleDocumentMessage(message, from, user) {
 
           logToFile('✅ Session created for classroom coaching', { sessionId });
 
+          require('./shared/services/coaching/coaching-media-store').stashAudioForWorker(documentId, audioBuffer);
+
           // Route to classroom coaching flow
           await CoachingService.initiateCoachingSession(
             user.id,
@@ -2048,6 +2057,27 @@ function exitOnChannelLogout() {
  * every release, so this runs on the normal deploy path, not just on manual
  * stops. No-op for any driver without local session state to flush.
  */
+let embeddedWorker = null;
+
+/** See worker-placement.js. A failure here costs background jobs, not the bot's replies, so it never stops the bot. */
+function startEmbeddedWorkerIfNeeded() {
+  if (!require('./shared/services/messaging/worker-placement').workerRunsInsideBot()) return;
+  embeddedWorker = require('./workers/sqs-worker');
+  embeddedWorker.startWorker().catch((error) => {
+    logToFile('❌ Embedded worker failed to start', { error: error.message, stack: error.stack });
+  });
+  logToFile('✅ Background worker running inside the bot', {});
+}
+
+async function stopEmbeddedWorker() {
+  if (!embeddedWorker) return;
+  try {
+    await embeddedWorker.worker.shutdown();
+  } catch (error) {
+    logToFile('❌ Embedded worker shutdown failed', { error: error.message });
+  }
+}
+
 function registerChannelShutdownHandlers() {
   const activeDrivers = Object.values(PERSISTENT_CONNECTION_DRIVERS).filter((d) => d.isActive(process.env));
   if (activeDrivers.length === 0) return;
@@ -2057,6 +2087,7 @@ function registerChannelShutdownHandlers() {
     if (shuttingDown) return; // a second signal must not cut the flush short
     shuttingDown = true;
     logToFile(`Received ${signal} — closing active channel connections before exit`, {});
+    await stopEmbeddedWorker(); // first: its jobs send through the connection closed below
     await Promise.all(
       activeDrivers.map(async (driver) => {
         try {
@@ -2085,6 +2116,7 @@ function startServer() {
   wireBaileysInboundIfSelected();
   registerChannelShutdownHandlers();
   exitOnChannelLogout();
+  startEmbeddedWorkerIfNeeded();
   return app.listen(constants.PORT, () => {
   const version = require('./shared/utils/version').rumiVersion();
   // Only a Meta deployment has a Meta webhook to configure (see the module).

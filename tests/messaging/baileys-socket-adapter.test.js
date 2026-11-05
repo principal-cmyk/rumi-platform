@@ -215,6 +215,58 @@ describe('mapToMetaShape', () => {
     expect(result.mediaToCache).toEqual({ id: 'wa-msg-1', buffer, mimetype: 'image/jpeg' });
   });
 
+  describe('lesson videos', () => {
+    const video = (over = {}) => ({
+      key: baseKey,
+      messageTimestamp: 1700000002,
+      message: { videoMessage: { mimetype: 'video/mp4', seconds: 720, fileLength: 1000, caption: 'P4 maths', ...over } },
+    });
+
+    it('maps a lesson-length video and caches it for the handler', async () => {
+      const { mapToMetaShape } = loadAdapter();
+      const buffer = Buffer.from('MP4DATA');
+      const result = await mapToMetaShape(video(), jest.fn().mockResolvedValue(buffer));
+      expect(result.metaMessage).toMatchObject({
+        type: 'video',
+        video: { id: 'wa-msg-1', mime_type: 'video/mp4', duration: 720, file_size: 1000, caption: 'P4 maths' },
+      });
+      expect(result.mediaToCache).toEqual({ id: 'wa-msg-1', buffer, mimetype: 'video/mp4' });
+    });
+
+    it('does not pull a short clip into memory, but still dispatches it so the teacher gets an answer', async () => {
+      const { mapToMetaShape } = loadAdapter();
+      const download = jest.fn();
+      const result = await mapToMetaShape(video({ seconds: 20 }), download);
+      expect(download).not.toHaveBeenCalled();
+      expect(result.metaMessage.type).toBe('video');
+      expect(result.mediaToCache).toBeNull();
+    });
+
+    it('does not pull an oversized file into memory', async () => {
+      const { mapToMetaShape } = loadAdapter();
+      const download = jest.fn();
+      await mapToMetaShape(video({ fileLength: 5 * 1024 * 1024 * 1024 }), download);
+      expect(download).not.toHaveBeenCalled();
+    });
+
+    it('treats a video sent as a file as a video, with its length left to be measured', async () => {
+      const { mapToMetaShape } = loadAdapter();
+      const waMessage = {
+        key: baseKey,
+        messageTimestamp: 1700000002,
+        message: { documentMessage: { mimetype: 'video/mp4', fileName: 'lesson.mp4', fileLength: 1000 } },
+      };
+      const result = await mapToMetaShape(waMessage, jest.fn().mockResolvedValue(Buffer.from('X')));
+      expect(result.metaMessage).toMatchObject({ type: 'video', video: { duration: 0 } });
+      expect(result.mediaToCache).not.toBeNull();
+    });
+
+    it('leaves a GIF alone', async () => {
+      const { mapToMetaShape } = loadAdapter();
+      await expect(mapToMetaShape(video({ gifPlayback: true }), jest.fn())).resolves.toBeNull();
+    });
+  });
+
   it('maps a voice note (ptt:true audio) with type "voice"', async () => {
     const { mapToMetaShape } = loadAdapter();
     const buffer = Buffer.from('OGGDATA');
@@ -336,6 +388,61 @@ describe('attach()', () => {
     const [req, res] = dispatch.mock.calls[0];
     expect(req.body.entry[0].changes[0].value.messages[0]).toMatchObject({ from: '923001234567', type: 'text' });
     expect(typeof res.status).toBe('function');
+  });
+
+  describe('after a reconnect', () => {
+    // Live bug: every reconnect makes a new socket, but the listener only ever sat on the first. After one network
+    // drop the bot reported "connected" and answered nothing, and WhatsApp still showed the teacher two ticks.
+    const EventEmitter = require('events');
+    const hi = (id) => ({
+      messages: [{
+        key: { remoteJid: '923001234567@s.whatsapp.net', id, fromMe: false },
+        messageTimestamp: 1700000010,
+        message: { conversation: 'hi bot' },
+      }],
+    });
+
+    async function attachWith(firstSock) {
+      jest.resetModules();
+      const events = new EventEmitter();
+      jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
+      jest.doMock('../../bot/shared/storage/r2', () => ({ downloadFromR2: jest.fn(), extractKeyFromUrl: jest.fn() }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-connection', () => ({
+        getSocket: jest.fn().mockResolvedValue(firstSock), isConnected: jest.fn(), authDir: jest.fn(), events,
+      }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-channel.service', () => ({ _cacheIncomingMedia: jest.fn() }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-lib', () => ({ loadBaileys: jest.fn().mockResolvedValue({ downloadMediaMessage: jest.fn() }) }));
+      const adapter = require('../../bot/shared/services/messaging/inbound/baileys-socket.adapter');
+      const dispatch = jest.fn().mockResolvedValue(undefined);
+      await adapter.attach(dispatch);
+      return { events, dispatch };
+    }
+
+    it('keeps receiving on the new socket', async () => {
+      const first = mockSock();
+      const { events, dispatch } = await attachWith(first);
+      const second = mockSock();
+      events.emit('socket', second);
+      await second.handlers['messages.upsert'](hi('after-reconnect'));
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('survives repeated reconnects', async () => {
+      const { events, dispatch } = await attachWith(mockSock());
+      for (const id of ['a', 'b', 'c']) {
+        const next = mockSock();
+        events.emit('socket', next);
+        await next.handlers['messages.upsert'](hi(id));
+      }
+      expect(dispatch).toHaveBeenCalledTimes(3);
+    });
+
+    it('never listens to one socket twice, which would answer every message twice', async () => {
+      const first = mockSock();
+      const { events } = await attachWith(first);
+      events.emit('socket', first);
+      expect(first.ev.on.mock.calls.filter(([name]) => name === 'messages.upsert')).toHaveLength(1);
+    });
   });
 
   it('skips messages that map to null (e.g. group chat) without calling dispatch', async () => {
