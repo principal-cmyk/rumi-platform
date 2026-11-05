@@ -196,6 +196,17 @@ class ReportGeneratorService {
         }
       }
 
+      // A lesson video: what was seen, in counts the teacher can check against their own memory of the lesson.
+      if (!isRetry && session.conversation_state?.video_observation_stats) {
+        try {
+          const { chatSummary } = require('./video-observation');
+          const summary = chatSummary(session.conversation_state.video_observation_stats);
+          if (summary) await WhatsAppService.sendMessage(from, summary);
+        } catch (summaryError) {
+          logToFile('⚠️ Video summary failed (non-critical)', { coachingSessionId, error: summaryError.message });
+        }
+      }
+
       // Generate and send voice debrief (optional, won't fail entire process)
       if (!isRetry) {
         await this.generateAndSendVoiceDebrief(session, from, coachingSessionId, enhancedAnalysis);

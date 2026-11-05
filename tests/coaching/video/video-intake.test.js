@@ -10,7 +10,7 @@ jest.mock('../../../bot/shared/services/vision.service', () => ({
 }));
 const seen = (analysis) => ({ success: true, analysis });
 
-const { frameTimestamps, describeFrames } = require('../../../bot/shared/services/coaching/video-intake.service');
+const { frameTimestamps, observeFrames } = require('../../../bot/shared/services/coaching/video-intake.service');
 
 beforeEach(() => mockAnalyze.mockReset());
 
@@ -24,46 +24,56 @@ describe('frameTimestamps', () => {
   });
 });
 
-describe('describeFrames', () => {
+describe('observeFrames', () => {
   const frames = [
     { buffer: Buffer.from('a'), atSeconds: 125 },
     { buffer: Buffer.from('b'), atSeconds: 250 },
   ];
+  const checklist = (over = {}) => seen(JSON.stringify({
+    classroom_visible: true,
+    students: { order: 'calm', hands_raised: 'few', off_task: 'none', activity: 'listening', note: 'Pupils in rows.' },
+    teacher: { position: 'front', interaction: 'whole_class', leaning_in: 'no', note: '' },
+    ...over,
+  }));
 
-  test('notes are time-stamped so the scorer can line them up with the lesson', async () => {
-    mockAnalyze.mockResolvedValueOnce(seen('Pupils in rows.')).mockResolvedValueOnce(seen('Teacher at the board.'));
-    await expect(describeFrames(frames)).resolves.toBe('[02:05] Pupils in rows.\n[04:10] Teacher at the board.');
+  test('produces time-stamped evidence and counts', async () => {
+    mockAnalyze.mockResolvedValue(checklist());
+    const result = await observeFrames(frames);
+    expect(result.evidence).toContain('[02:05]');
+    expect(result.stats.readable).toBe(2);
   });
 
-  test('one unreadable still does not lose the others', async () => {
-    mockAnalyze.mockResolvedValueOnce({ success: false, error: 'bad image' }).mockResolvedValueOnce(seen('Teacher at the board.'));
-    await expect(describeFrames(frames)).resolves.toBe('[04:10] Teacher at the board.');
+  test('one unreadable still does not lose the others, and is counted as unread', async () => {
+    mockAnalyze.mockResolvedValueOnce({ success: false, error: 'bad image' }).mockResolvedValueOnce(checklist());
+    const result = await observeFrames(frames);
+    expect(result.stats.readable).toBe(1);
+    expect(result.stats.total).toBe(2);
   });
 
-  test.each([['NOT_VISIBLE'], ['NOT_VISIBLE.'], ['  NOT_VISIBLE\n']])(
-    'a still the model cannot read (%j) never becomes evidence', async (reply) => {
-      mockAnalyze.mockResolvedValue(seen(reply));
-      await expect(describeFrames(frames)).resolves.toBeNull();
-    },
-  );
-
-  test('the model is told not to assume a classroom, may refuse, and is not asked to be creative or encouraging', async () => {
-    mockAnalyze.mockResolvedValue(seen('Pupils in rows.'));
-    await describeFrames(frames);
-    const options = mockAnalyze.mock.calls[0][2];
-    expect(options.prompt).toMatch(/do not assume/i);
-    expect(options.prompt).toContain('NOT_VISIBLE');
-    expect(options.temperature).toBe(0);
-    expect(options.systemPrompt).toMatch(/never guess/i);
+  test('a still with no classroom in it never becomes evidence', async () => {
+    mockAnalyze.mockResolvedValue(seen(JSON.stringify({ classroom_visible: false })));
+    await expect(observeFrames(frames)).resolves.toEqual({ evidence: null, stats: null });
   });
 
-  test('a vision outage leaves null: the teacher still gets speech-based coaching', async () => {
+  test('a vision outage leaves nothing: the teacher still gets speech-based coaching', async () => {
     mockAnalyze.mockRejectedValue(new Error('vision down'));
-    await expect(describeFrames(frames)).resolves.toBeNull();
+    await expect(observeFrames(frames)).resolves.toEqual({ evidence: null, stats: null });
   });
 
   test('no frames makes no vision calls', async () => {
-    await expect(describeFrames([])).resolves.toBeNull();
+    await expect(observeFrames([])).resolves.toEqual({ evidence: null, stats: null });
     expect(mockAnalyze).not.toHaveBeenCalled();
+  });
+
+  test('the model may answer unclear, must not assume a classroom, and sees the detail hands need', async () => {
+    mockAnalyze.mockResolvedValue(checklist());
+    await observeFrames(frames);
+    const options = mockAnalyze.mock.calls[0][2];
+    expect(options.prompt).toMatch(/do not assume/i);
+    expect(options.prompt).toContain('unclear');
+    expect(options.prompt).toContain('classroom_visible');
+    expect(options.temperature).toBe(0);
+    expect(options.detail).toBe('high');
+    expect(options.systemPrompt).toMatch(/never guess/i);
   });
 });

@@ -27,7 +27,7 @@ const mockSessionService = { updateStatus: jest.fn(async () => ({})), updateConv
 jest.mock('../../../bot/shared/services/coaching/coaching-session.service', () => mockSessionService);
 const mockStore = { load: jest.fn(), remove: jest.fn() };
 jest.mock('../../../bot/shared/services/coaching/coaching-media-store', () => mockStore);
-const mockIntake = { prepare: jest.fn(), describeFrames: jest.fn() };
+const mockIntake = { prepare: jest.fn(), observeFrames: jest.fn() };
 jest.mock('../../../bot/shared/services/coaching/video-intake.service', () => mockIntake);
 const mockLp = { advanceToLessonPlanStep: jest.fn(async () => true) };
 jest.mock('../../../bot/shared/services/coaching/lp-coaching/lp-step.service', () => mockLp);
@@ -66,7 +66,7 @@ describe('a lesson video', () => {
   beforeEach(() => {
     row({ audio_format: 'video' });
     mockStore.load.mockReturnValue({ audio: Buffer.from('a'), frames });
-    mockIntake.describeFrames.mockResolvedValue('[01:40] Pupils in groups.');
+    mockIntake.observeFrames.mockResolvedValue({ evidence: '[01:40] Pupils in groups.', stats: { readable: 1 } });
   });
 
   test('uses the stored copy, because the worker cannot fetch it from the channel', async () => {
@@ -77,8 +77,10 @@ describe('a lesson video', () => {
   test('stays marked as a video and carries its visual notes to scoring', async () => {
     await run();
     expect(savedFormat()).toBe('video');
-    expect(mockIntake.describeFrames).toHaveBeenCalledWith(frames);
-    expect(mockSessionService.updateConversationState).toHaveBeenCalledWith('cs1', { video_observations: '[01:40] Pupils in groups.' });
+    expect(mockIntake.observeFrames).toHaveBeenCalledWith(frames);
+    expect(mockSessionService.updateConversationState).toHaveBeenCalledWith('cs1', {
+      video_observations: '[01:40] Pupils in groups.', video_observation_stats: { readable: 1 },
+    });
   });
 
   test('goes straight to the lesson-plan step: the video already showed the classroom', async () => {
@@ -93,7 +95,7 @@ describe('a lesson video', () => {
   });
 
   test('a vision outage still reaches the lesson-plan step', async () => {
-    mockIntake.describeFrames.mockResolvedValue(null);
+    mockIntake.observeFrames.mockResolvedValue({ evidence: null, stats: null });
     await run();
     expect(mockLp.advanceToLessonPlanStep).toHaveBeenCalled();
   });

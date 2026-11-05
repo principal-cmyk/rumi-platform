@@ -248,12 +248,14 @@ class TranscriptionProcessorService {
         logToFile('⚠️ Agency follow-up check failed (non-critical)', { error: agencyError.message });
       }
 
-      // A video has already shown the classroom: describe its stills instead of asking for a photo. The notes are
+      // A video has already shown the classroom: read its stills instead of asking for a photo. The notes are
       // best-effort, and the lesson-plan step reads conversation_state fresh, so it keeps them.
       if (isVideo) {
-        const { describeFrames } = require('./video-intake.service');
-        const videoObservations = await describeFrames(media.frames);
-        await CoachingSessionService.updateConversationState(coachingSessionId, { video_observations: videoObservations });
+        const { observeFrames } = require('./video-intake.service');
+        const { evidence: videoObservations, stats } = await observeFrames(media.frames);
+        await CoachingSessionService.updateConversationState(coachingSessionId, {
+          video_observations: videoObservations, video_observation_stats: stats,
+        });
         await CoachingSessionService.updateStatus(coachingSessionId, 'awaiting_photo');
         const { advanceToLessonPlanStep } = require('./lp-coaching/lp-step.service');
         await advanceToLessonPlanStep({ sessionId: coachingSessionId, from });

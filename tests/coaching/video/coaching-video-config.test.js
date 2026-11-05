@@ -2,7 +2,7 @@
 /** Which videos are lessons, how many stills are sampled, and how visual evidence reaches the scoring prompt. */
 const config = require('../../../bot/shared/config/coaching-video');
 
-const KEYS = ['COACHING_VIDEO_MIN_SECONDS', 'COACHING_VIDEO_MAX_SECONDS', 'COACHING_VIDEO_MAX_BYTES', 'COACHING_VIDEO_FRAME_COUNT'];
+const KEYS = ['COACHING_VIDEO_MIN_SECONDS', 'COACHING_VIDEO_MAX_SECONDS', 'COACHING_VIDEO_MAX_BYTES', 'COACHING_VIDEO_FRAME_INTERVAL_SECONDS'];
 afterEach(() => KEYS.forEach((k) => delete process.env[k]));
 
 describe('isCoachingVideoLength', () => {
@@ -32,12 +32,25 @@ describe('isCoachingVideoLength', () => {
 });
 
 describe('videoFrameCount', () => {
-  test('defaults to 6 and is clamped, because each still costs a vision call', () => {
-    expect(config.videoFrameCount()).toBe(6);
-    process.env.COACHING_VIDEO_FRAME_COUNT = '500';
-    expect(config.videoFrameCount()).toBe(12);
-    process.env.COACHING_VIDEO_FRAME_COUNT = '0';
-    expect(config.videoFrameCount()).toBe(0);
+  test('samples every 30 seconds, so patterns across the lesson can show', () => {
+    expect(config.videoFrameCount(480)).toBe(16);
+    expect(config.videoFrameCount(900)).toBe(30);
+  });
+
+  test('is capped, because each still is a vision call', () => {
+    expect(config.videoFrameCount(3600)).toBe(30);
+    process.env.COACHING_VIDEO_FRAME_INTERVAL_SECONDS = '1';
+    expect(config.videoFrameCount(900)).toBe(30);
+  });
+
+  test('the interval can be widened', () => {
+    process.env.COACHING_VIDEO_FRAME_INTERVAL_SECONDS = '60';
+    expect(config.videoFrameCount(900)).toBe(15);
+  });
+
+  test('0 turns visual analysis off', () => {
+    process.env.COACHING_VIDEO_FRAME_INTERVAL_SECONDS = '0';
+    expect(config.videoFrameCount(900)).toBe(0);
   });
 });
 
@@ -45,6 +58,14 @@ describe('appendVisualEvidence', () => {
   test('without notes the prompt is byte-identical: audio coaching must not change', () => {
     expect(config.appendVisualEvidence('PROMPT', null)).toBe('PROMPT');
     expect(config.appendVisualEvidence('PROMPT', '')).toBe('PROMPT');
+  });
+
+  test('asks the scorer to weigh behaviour, and to line stills up with what was said', () => {
+    const out = config.appendVisualEvidence('PROMPT', '[02:00] Pupils in rows.');
+    expect(out).toMatch(/circulat/i);
+    expect(out).toMatch(/redirect/i);
+    expect(out).toMatch(/off task/i);
+    expect(out).toMatch(/transcript/i);
   });
 
   test('notes are added, and framed as stills rather than a record of the whole lesson', () => {

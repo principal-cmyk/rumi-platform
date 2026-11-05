@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Classroom coaching accepts 10 to 15 minute videos.** Rumi coaches on the speech and on still frames sampled across the lesson, for every framework. See [Classroom videos](docs/features/coaching.md#classroom-videos).
+**Classroom coaching accepts 10 to 15 minute videos.** Rumi coaches on the speech and on stills read about every 30 seconds against a behaviour checklist (order, hands raised, off-task students, teacher position and proximity), counted across the lesson, for every framework. See [Classroom videos](docs/features/coaching.md#classroom-videos).
 
 **`ALLOWED_LANGUAGES` narrows a deployment to the languages its teachers use**, and Kiswahili is now a supported language with speech recognition hints.
 
