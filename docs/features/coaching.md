@@ -22,11 +22,11 @@ The sample data is hand-authored under [`scripts/samples/`](../../scripts/sample
 
 ## What it is
 
-A teacher records part of a lesson as **audio** on their phone and sends the voice note to Rumi on WhatsApp. Rumi transcribes it, scores it against a research-backed classroom-observation framework, talks the teacher through a short reflection, and returns a professional PDF report with concrete next steps. No coach, no scheduled visit, no travel — just the phone in their pocket.
+A teacher records part of a lesson on their phone, as **audio** or as a **10 to 15 minute video**, and sends it to Rumi on WhatsApp. Rumi transcribes it, scores it against a research-backed classroom-observation framework, talks the teacher through a short reflection, and returns a professional PDF report with concrete next steps. No coach, no scheduled visit, no travel — just the phone in their pocket.
 
 ## How it works
 
-1. **Teacher records** their classroom as audio and sends the voice note to Rumi. _(Audio only — Rumi does not process classroom video.)_
+1. **Teacher records** their classroom and sends it to Rumi: audio, or a video between 10 and 15 minutes (see [Classroom videos](#classroom-videos)).
 2. **Rumi transcribes** the recording (Soniox, with Whisper fallback), handling multilingual and code-switched speech.
 3. **Rumi scores** the transcript against the teacher's selected framework:
    - **OECD** — the OECD Global Teaching InSights observation framework
@@ -70,6 +70,16 @@ A real, anonymized Tanzanian session in Kiswahili (teacher renamed **Asha**, stu
 ![Commitment card — Asha's own Q3 commitment + one specific action for next class](../images/walkthroughs/5_commitment_card.png)
 
 These five panels are the live shipped Tanzanian (MEWAKA) experience, captured exactly as the bot sends them (verbatim Kiswahili from `coaching-strings.js`, Q1/Q2/Q3 from a real anonymised session). The hero report + the post-observation commitment card are the **default for every framework** — OECD/HOTS/TEACH/FICO and MEWAKA — so each adopter's teachers get the same celebration design rendered against their framework's own scorecard. The renderer-registry dispatches all five to the same hero renderer; the score adapter under [`bot/shared/services/coaching/report-v2/score-adapters/`](../../bot/shared/services/coaching/report-v2/score-adapters/) handles the per-framework score shape.
+
+## Classroom videos
+
+A video from 10 to 15 minutes long, sent as a video or as a file, starts the same coaching flow as a classroom recording. Rumi extracts the sound and transcribes it as usual, and describes still frames sampled evenly across the lesson (6 by default) with vision AI. Those notes reach the scoring prompt for every framework, as evidence of what can be seen: layout, displays, materials, how pupils are grouped. They are moments rather than a record of the lesson, so the transcript still decides anything about what was said or taught. A video skips the classroom-photo question and goes straight to the lesson-plan step.
+
+If the vision step fails, the teacher still gets feedback from the speech. A video with no sound is refused, because the speech is what the report is built on.
+
+**Privacy.** The stills show pupils and are sent to your LLM provider for description, so make sure your consent arrangements cover this. Set `COACHING_VIDEO_FRAME_COUNT=0` for speech-only coaching. The video itself is not kept. Its audio and stills are held on disk, readable only by the service account, until transcription finishes, and are deleted then. If the teacher answers No they are deleted at once, and anything abandoned is deleted after a day. The text descriptions stay on the coaching session.
+
+**Limits by channel.** On a linked device (`CHANNEL_DRIVER=baileys`), WhatsApp's video size limits apply. On the WhatsApp Cloud API, Meta caps videos at 16 MB and documents at 100 MB, so most lessons need sending as a document at reduced quality. Settings: `COACHING_VIDEO_MIN_SECONDS`, `COACHING_VIDEO_MAX_SECONDS`, `COACHING_VIDEO_MAX_BYTES`, `COACHING_VIDEO_FRAME_COUNT`.
 
 ## Enable it
 

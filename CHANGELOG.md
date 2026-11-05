@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Classroom coaching accepts 10 to 15 minute videos.** Rumi coaches on the speech and on still frames sampled across the lesson, for every framework. See [Classroom videos](docs/features/coaching.md#classroom-videos).
+
+Also fixed: on the linked-device channel, classroom audio could never reach the worker, because the recording lived only in the bot process's memory. It is now handed over on disk.
+
 **The exam checker reads and grades with one vision model, in two calls, and needs no key of its own.**
 
 > **Upgrade notes.** Existing Supabase deployments: run `node infrastructure/scripts/migrate.js` (migration

@@ -168,6 +168,7 @@ function hasDispatchableContent(waMessage) {
     || content.imageMessage
     || content.audioMessage
     || content.documentMessage
+    || (content.videoMessage && !content.videoMessage.gifPlayback)
   );
 }
 
@@ -429,6 +430,28 @@ async function mapToMetaShape(waMessage, downloadMediaMessage, sock) {
     return {
       metaMessage: { ...base, type: isVoiceNote ? 'voice' : 'audio', audio: { id, mime_type: content.audioMessage.mimetype } },
       mediaToCache: { id, buffer, mimetype: content.audioMessage.mimetype },
+    };
+  }
+
+  // A lesson video, sent as a video or as a file. Length and size are known before the download, so a clip that could
+  // never be coached is not pulled into memory; the handler explains why, and measures a file that reports no length.
+  const videoContent = content.videoMessage
+    || ((content.documentMessage?.mimetype || '').startsWith('video/') ? content.documentMessage : null);
+  if (videoContent) {
+    const { isCoachingVideoLength, maxVideoBytes } = require('../../../config/coaching-video');
+    const duration = Number(videoContent.seconds) || 0;
+    const fileSize = Number(videoContent.fileLength) || 0;
+    const worthDownloading = (!duration || isCoachingVideoLength(duration)) && fileSize <= maxVideoBytes();
+    const buffer = worthDownloading ? await downloadMediaMessage(waMessage, 'buffer', {}) : null;
+    return {
+      metaMessage: {
+        ...base,
+        type: 'video',
+        video: {
+          id, mime_type: videoContent.mimetype, duration, file_size: fileSize, caption: videoContent.caption || '',
+        },
+      },
+      mediaToCache: buffer ? { id, buffer, mimetype: videoContent.mimetype } : null,
     };
   }
 

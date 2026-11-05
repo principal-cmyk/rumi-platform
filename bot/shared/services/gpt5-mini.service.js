@@ -4,6 +4,7 @@ const { OPENAI_API_KEY } = require('../utils/constants');
 const { logToFile } = require('../utils/logger');
 const supabase = require('../config/supabase');
 const { ownCoaching } = require('./coaching/own-coaching');
+const { appendVisualEvidence } = require('../config/coaching-video');
 const {
   CLASSROOM_MARKS_BASE,
   CLASSROOM_MARKS_WITH_LP,
@@ -349,9 +350,14 @@ CONVERSATIONAL FRAMEWORK: S.T.I.C.K.S. PRINCIPLES
         },
         {
           role: 'user',
-          content: useFrameworkModule
-            ? framework.buildAnalysisPrompt(transcript, metadata, lessonPlanStructured, null)
-            : this._buildAnalysisPrompt(transcript, metadata, lessonPlanStructured)
+          // Stills from a lesson video reach every rubric through here. Audio sessions have none, and their prompt
+          // stays byte-identical.
+          content: appendVisualEvidence(
+            useFrameworkModule
+              ? framework.buildAnalysisPrompt(transcript, metadata, lessonPlanStructured, metadata.visualEvidence || null)
+              : this._buildAnalysisPrompt(transcript, metadata, lessonPlanStructured),
+            metadata.visualEvidence,
+          )
         }
       ];
 

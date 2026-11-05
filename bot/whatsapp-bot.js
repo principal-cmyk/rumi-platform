@@ -523,6 +523,13 @@ async function handleWebhookPost(req, res) {
       if (!answeredAsk) await handleTextMessage(message, from, messageBody, user);
     } else if (messageType === 'audio' || messageType === 'voice') {
       await handleVoiceMessage(message, from, user);
+    } else if (messageType === 'video' && message.video) {
+      await require('./shared/handlers/video-message.handler').handleVideoMessage(message, from, user);
+    } else if (messageType === 'document' && (message.document?.mime_type || '').startsWith('video/')) {
+      // Meta caps a WhatsApp video well below a lesson's size, so a lesson often arrives as a file.
+      await require('./shared/handlers/video-message.handler').handleVideoMessage(
+        { ...message, video: { id: message.document.id, mime_type: message.document.mime_type } }, from, user,
+      );
     } else if (messageType === 'image' && message.image) {
       // Handle image messages for multimodal vision analysis
       await handleImageMessage(message, from, user);
@@ -1784,6 +1791,8 @@ async function handleDocumentMessage(message, from, user) {
           const sessionId = await getOrCreateSession(user.id);
 
           logToFile('✅ Session created for classroom coaching', { sessionId });
+
+          require('./shared/services/coaching/coaching-media-store').stashAudioForWorker(documentId, audioBuffer);
 
           // Route to classroom coaching flow
           await CoachingService.initiateCoachingSession(

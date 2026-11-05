@@ -814,6 +814,9 @@ async function handleVoiceMessage(message, from, user = null) {
 
         // Route to classroom coaching flow
         if (user && sessionId) {
+          if (prefetchedAudio) {
+            require('../services/coaching/coaching-media-store').stashAudioForWorker(audioId, prefetchedAudio);
+          }
           await CoachingService.initiateCoachingSession(
             user.id,
             sessionId,
