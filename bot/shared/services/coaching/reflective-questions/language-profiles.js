@@ -26,6 +26,7 @@ const LANGUAGE_PROFILES = {
     avoid_hint: " Avoid Hindi-isms ('turant'→'foran') and bookish words (taajub, muntakhab, markooz).",
     gender_hint:
       "Urdu is gendered — agree verbs with a noun (zehen, khayal, sawal, qadam), not with 'aap'.",
+    time_phrase_examples: "'shuru mein'/'kareeb 10 minute par'/'lesson ke aakhir mein'",
   },
   sw: {
     language: 'Kiswahili',
@@ -33,13 +34,15 @@ const LANGUAGE_PROFILES = {
     region: 'Tanzania',
     avoid_hint: '',
     gender_hint: 'Kiswahili is gender-neutral — write naturally.',
+    time_phrase_examples: "'mwanzoni'/'karibu dakika 10'/'mwishoni mwa somo'",
   },
   en: {
     language: 'English',
     script: 'Latin',
     region: '(English-medium)',
-    avoid_hint: '',
+    avoid_hint: ' Write entirely in English: no Urdu, Hindi, Kiswahili or other words in any script, even if the lesson used them. The only exception is a word actually spoken in the lesson, quoted verbatim in single quotes.',
     gender_hint: 'English 2nd-person is gender-neutral — write naturally.',
+    time_phrase_examples: "'at the start'/'about 10 minutes in'/'near the end of the lesson'",
   },
   ar: {
     language: 'Arabic',

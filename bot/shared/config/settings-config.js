@@ -36,7 +36,9 @@ function parseLanguagesEnv() {
   }
 }
 
-const LANGUAGES_DROPDOWN = parseLanguagesEnv() || DEFAULT_LANGUAGES;
+const { isAllowed } = require('./supported-languages');
+
+const LANGUAGES_DROPDOWN = parseLanguagesEnv() || DEFAULT_LANGUAGES.filter((language) => isAllowed(language.id));
 
 // Observation framework options — built from region-config labels.
 const FRAMEWORKS_DROPDOWN = Object.entries(FRAMEWORK_LABELS).map(([id, title]) => ({

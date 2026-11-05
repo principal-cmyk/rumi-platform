@@ -37,7 +37,10 @@ require('dotenv').config();
 // this worker sends to Matrix teachers through it rather than opening a second
 // one -- see shared/services/messaging/matrix-outbound-relay.js. Must run before
 // any job can reach the messaging layer. A no-op for deployments without Matrix.
-require('../shared/services/messaging/matrix-outbound-relay').useRelayForThisProcess();
+// Loaded inside the bot (see worker-placement.js) this file is a guest: the process, its signals and its connections
+// belong to the bot, so everything that assumes otherwise waits on RUNS_ALONE.
+const RUNS_ALONE = require.main === module;
+if (RUNS_ALONE) require('../shared/services/messaging/matrix-outbound-relay').useRelayForThisProcess();
 
 // The operator's RUMI_FEATURE_* switches, as the bot loads them: a job for a
 // feature switched off after it was queued is not run (see testpaper.worker).
@@ -726,37 +729,40 @@ class SQSCoachingWorker {
 // Create worker instance
 const worker = new SQSCoachingWorker(WORKER_ID);
 
-// Graceful shutdown handlers
-process.on('SIGTERM', async () => {
-  logToFile('Received SIGTERM signal');
-  await worker.shutdown();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  logToFile('Received SIGINT signal');
-  await worker.shutdown();
-  process.exit(0);
-});
-
-// Uncaught exception handler
-process.on('uncaughtException', (error) => {
-  logToFile('❌ UNCAUGHT EXCEPTION', {
-    error: error.message,
-    stack: error.stack
+if (RUNS_ALONE) {
+  // Graceful shutdown handlers. Inside the bot these would exit mid-way through its own shutdown, which flushes the
+  // WhatsApp session keys; the bot calls worker.shutdown() itself first.
+  process.on('SIGTERM', async () => {
+    logToFile('Received SIGTERM signal');
+    await worker.shutdown();
+    process.exit(0);
   });
-  worker.shutdown().then(() => {
-    process.exit(1);
-  });
-});
 
-// Unhandled rejection handler
-process.on('unhandledRejection', (reason, promise) => {
-  logToFile('❌ UNHANDLED REJECTION', {
-    reason: reason,
-    promise: promise
+  process.on('SIGINT', async () => {
+    logToFile('Received SIGINT signal');
+    await worker.shutdown();
+    process.exit(0);
   });
-});
+
+  // Uncaught exception handler
+  process.on('uncaughtException', (error) => {
+    logToFile('❌ UNCAUGHT EXCEPTION', {
+      error: error.message,
+      stack: error.stack
+    });
+    worker.shutdown().then(() => {
+      process.exit(1);
+    });
+  });
+
+  // Unhandled rejection handler
+  process.on('unhandledRejection', (reason, promise) => {
+    logToFile('❌ UNHANDLED REJECTION', {
+      reason: reason,
+      promise: promise
+    });
+  });
+}
 
 // ============================================================================
 // HEALTH CHECK ENDPOINT
@@ -1224,7 +1230,7 @@ function startWorker() {
         error: error.message,
         stack: error.stack,
       });
-      process.exit(1);
+      if (RUNS_ALONE) process.exit(1);
     });
 
     // Periodic stale job recovery - runs every 5 minutes
@@ -1262,6 +1268,11 @@ function startWorker() {
 }
 
 if (require.main === module) {
+  if (require('../shared/services/messaging/worker-placement').workerRunsInsideBot()) {
+    // Two consumers would race for jobs, and this one could send nothing: the bot holds the WhatsApp session.
+    console.error('On a linked WhatsApp device the worker runs inside the bot. `rumi start` is all you need.');
+    process.exit(0);
+  }
   startWorker();
 }
 

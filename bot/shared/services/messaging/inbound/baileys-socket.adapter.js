@@ -504,9 +504,8 @@ function buildSyntheticResponse() {
  */
 async function attach(dispatch) {
   const { downloadMediaMessage } = await require('../baileys-lib').loadBaileys();
-  const sock = await connection.getSocket();
 
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  const onMessages = (sock) => async ({ messages }) => {
     for (const waMessage of messages) {
       try {
         // Harvest the @lid->phone mapping FIRST, from every delivery — the
@@ -542,9 +541,20 @@ async function attach(dispatch) {
         logToFile('❌ Baileys inbound: error processing message', { error: error.message, stack: error.stack });
       }
     }
-  });
+  };
 
-  logToFile('✅ Baileys inbound listener attached', {});
+  // The first socket is reported both ways, so each one is tracked: a socket listened to twice answers every
+  // message twice. Subscribed before getSocket(), so a reconnect during startup is not missed.
+  const listening = new WeakSet();
+  const listenTo = (sock) => {
+    if (listening.has(sock)) return;
+    listening.add(sock);
+    sock.ev.on('messages.upsert', onMessages(sock));
+    logToFile('✅ Baileys inbound listener attached', {});
+  };
+
+  if (connection.events) connection.events.on('socket', listenTo);
+  listenTo(await connection.getSocket());
 }
 
 module.exports = {

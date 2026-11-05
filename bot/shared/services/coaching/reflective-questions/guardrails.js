@@ -42,6 +42,8 @@ function validateQuestion(question, corpus = {}, firstName = '', profile = {}) {
   if (RAW_MMSS_RE.test(q)) v.push('raw_mmss');
   if (META_LEAK_RE.test(q)) v.push('meta_leak');
 
+  if (profile.language === 'English' && _isOtherLanguage(q)) v.push('wrong_language');
+
   // TTS gates for a non-Latin-script language (e.g. Urdu Nastaliq). These questions are
   // read aloud; Roman transliteration and bare inline digits both break the voice.
   if (profile.script && profile.script !== 'Latin') {
@@ -70,6 +72,31 @@ function _isRomanized(q) {
   const total = latin + nativeScript;
   if (total === 0) return false;
   return nativeScript / total < 0.4; // <40% native-script letters => Roman, not its own script
+}
+
+// Words that are not English and are not plausible inside an English question. Two are needed, so a stray name or
+// borrowed word does not cost a good question. Quoted speech is left out: teachers really did say those words.
+const NON_ENGLISH_WORDS = new Set([
+  'aap', 'aapne', 'aapke', 'aapki', 'kya', 'hai', 'hain', 'nahi', 'nahin', 'mein', 'aur', 'kareeb', 'lekin', 'yeh',
+  'tha', 'thi', 'jab', 'bachon', 'sawaal', 'sawal', 'jawab', 'dimaag', 'poochha', 'ko', 'ne', 'ke',
+  'katika', 'wakati', 'wanafunzi', 'nini', 'somo', 'kwa', 'mwalimu', 'kuhusu', 'ulipouliza',
+]);
+
+// A list of other languages can only catch the ones somebody thought of, so a question must also read as English.
+const COMMON_ENGLISH_WORDS = new Set([
+  'the', 'a', 'an', 'to', 'of', 'you', 'your', 'what', 'was', 'were', 'in', 'is', 'and', 'that', 'when', 'how', 'did',
+  'do', 'for', 'with', 'this', 'it', 'they', 'their', 'then', 'at', 'on', 'why', 'would', 'about', 'said', 'asked',
+  'going', 'through', 'next', 'time', 'first', 'students', 'class', 'lesson',
+]);
+const MIN_ENGLISH_SHARE = 0.2;
+const MIN_WORDS_TO_JUDGE = 6;
+
+function _isOtherLanguage(q) {
+  const unquoted = q.replace(/(^|[\s(])['‘"“][^'’"”]*['’"”]/g, ' ');
+  const words = unquoted.toLowerCase().match(/[\p{L}]+/gu) || [];
+  if (words.filter((w) => NON_ENGLISH_WORDS.has(w)).length >= 2) return true;
+  if (words.length < MIN_WORDS_TO_JUDGE) return false;
+  return words.filter((w) => COMMON_ENGLISH_WORDS.has(w)).length / words.length < MIN_ENGLISH_SHARE;
 }
 
 // _allowedNames / _containsInventedName were removed — the invented-name gate moved to the

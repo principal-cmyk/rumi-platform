@@ -38,6 +38,9 @@ The class chorusing 'yes'/'ndiyo'/'yes sir' is the MOST COMMON signal in every P
  */
 function buildQuestionPrompt(questionNumber, corpus, profile, firstName = '') {
   const { language, script, region, avoid_hint = '', gender_hint = '' } = profile;
+  // "English (Latin)" means the alphabet to us. A model read it as the Latin language and wrote exactly that.
+  const written = language === 'English' ? 'English' : `${language} (${script})`;
+  const englishTerms = language === 'English' ? '' : ' (Latin)';
   const beat = (Q_BEATS[questionNumber] || Q_BEATS[1]).replace(/\{firstName\}/g, firstName || 'the teacher');
 
   // This question is read aloud by a text-to-speech voice. For a non-Latin-script
@@ -50,7 +53,7 @@ function buildQuestionPrompt(questionNumber, corpus, profile, firstName = '') {
 - SCRIPT PURITY (this is read aloud — critical): write the ${language} text ENTIRELY in ${script}. Do NOT transliterate ${language} words into Roman/Latin letters — it breaks the voice. ONLY genuine English terms stay in Latin (see next rule).
 - NUMBERS AS WORDS: never write a bare digit (43, 8, 5) inline — the voice reads bare digits as gibberish. Spell every number as a word in ${language} (or as the English number word if it sits inside an English phrase). e.g. a "43 + 29" problem becomes the spelled-out ${language} form, not the digits.` : '';
 
-  return `You are a ${language}-speaking master-teacher coach writing ONE reflective question for the teacher ${firstName || ''}. You have a corpus extracted from her lesson (a through-line + significant/collective moments). Write the question in ${language} (${script}) with a faithful English translation.
+  return `You are a ${language}-speaking master-teacher coach writing ONE reflective question for the teacher ${firstName || ''}. You have a corpus extracted from her lesson (a through-line + significant/collective moments). Write the question in ${written} with a faithful English translation.
 
 Output ONLY valid JSON: { "question": "<${language}>", "question_en": "<English translation>" }
 
@@ -59,12 +62,12 @@ ${beat}
 ═══ NAME-SKEPTICISM ═══ Use a child's name ONLY if the moment's named_student is set. NEVER invent a name. If null, refer to "a student"/"the class" naturally in ${language}.
 
 ═══ LANGUAGE CRAFT (principle-driven — works for ANY language, never hardcoded) ═══
-- Write in ${language} (${script}), DEAD-SIMPLE staff-room register a 10-year-old can read.${ttsBlock}
+- Write in ${written}, DEAD-SIMPLE staff-room register a 10-year-old can read.${ttsBlock}
 - NATURAL-REGISTER PRINCIPLE: the everyday register a teacher in ${region} actually speaks — NOT bookish, classical, archaic, or borrowed from another country's variant.${avoid_hint}
 - GENDER-NEUTRALITY PRINCIPLE: the question must NEVER require knowing the teacher's gender. ${gender_hint}
-- SUBJECT-MATTER TERMS STAY IN ENGLISH (Latin) inside the question — grammar/science/maths terms (proper noun, photosynthesis, place value) and any English word she used. Helps TTS + matches how teachers code-switch.
+- SUBJECT-MATTER TERMS STAY IN ENGLISH${englishTerms} inside the question — grammar/science/maths terms (proper noun, photosynthesis, place value) and any English word she used. Helps TTS + matches how teachers code-switch.
 - REMIND WHEN it happened + just enough specific detail to place her back in the moment, then stop. NEVER raw MM:SS. NEVER say "Q1/Q2". Open ending.
-- NO HONORIFICS when you ADDRESS her: use the bare first name ("${firstName || 'Afshan'}") or none — never "${firstName || 'Afshan'} ji", never "Mwalimu"/"Teacher"/"Madam" as a form of address. (You MAY still quote her or a student's exact words verbatim even if the transcript labels a line "Mwalimu:" — quoting the moment is not addressing her by an honorific.)
+- NO HONORIFICS when you ADDRESS her: ${firstName ? `use the bare first name ("${firstName}") or none — never "${firstName} ji"` : 'you do not know her name, so use no name at all'}, never "Mwalimu"/"Teacher"/"Madam" as a form of address. (You MAY still quote her or a student's exact words verbatim even if the transcript labels a line "Mwalimu:" — quoting the moment is not addressing her by an honorific.)
 - LENGTH: aim for ≤75 words. Cut padding — no "I am wondering", no restating the question twice. But NEVER sacrifice the insight to hit the limit: depth lives in the question's structure, not word count.`;
 }
 

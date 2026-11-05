@@ -310,7 +310,9 @@ function detectLanguageOverride(text) {
   }
 
   // Check each language's override patterns
+  const { isAllowed } = require('../config/supported-languages');
   for (const [lang, patterns] of Object.entries(LANGUAGE_OVERRIDE_COMMANDS)) {
+    if (!isAllowed(lang)) continue;
     for (const pattern of patterns) {
       if (pattern.test(text)) {
         logToFile('✅ Explicit language override detected', {

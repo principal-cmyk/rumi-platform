@@ -17,12 +17,15 @@
 const redisService = require('../services/cache/railway-redis.service');
 const supabase = require('../config/supabase');
 const { logToFile } = require('./logger');
-const { SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE } = require('../config/supported-languages');
+const {
+  SUPPORTED_LANGUAGES, DEFAULT_LANGUAGE, isAllowed, allowedLanguages,
+} = require('../config/supported-languages');
+
+const VALID_LANGUAGES = SUPPORTED_LANGUAGES;
 
 // Supported language codes — single source of truth is config/supported-languages.js.
 // Full support (conversation + reading assessment): en, ur.
 // Conversation only: every other code (incl. the Indian set hi, bn, mr, te, ta-IN, kn).
-const VALID_LANGUAGES = SUPPORTED_LANGUAGES;
 const CACHE_TTL = 86400; // 24 hours
 
 /**
@@ -43,7 +46,7 @@ async function getUserLanguage(userId) {
     const cacheKey = `user:language:${userId}`;
     const cached = await redisService.get(cacheKey);
 
-    if (cached && VALID_LANGUAGES.includes(cached)) {
+    if (cached && isAllowed(cached)) {
       logToFile('✅ Language from cache', { userId, language: cached });
       return cached;
     }
@@ -66,7 +69,7 @@ async function getUserLanguage(userId) {
     const language = data?.preferred_language || DEFAULT_LANGUAGE;
 
     // Validate language code
-    if (!VALID_LANGUAGES.includes(language)) {
+    if (!isAllowed(language)) {
       logToFile('⚠️  Invalid language in DB, using default', {
         userId,
         invalidLanguage: language,
@@ -111,11 +114,11 @@ async function setUserLanguage(userId, languageCode, lockLanguage = true) {
   }
 
   // Validate language code
-  if (!VALID_LANGUAGES.includes(languageCode)) {
+  if (!isAllowed(languageCode)) {
     logToFile('❌ Invalid language code', {
       userId,
       languageCode,
-      validLanguages: VALID_LANGUAGES
+      validLanguages: allowedLanguages()
     });
     return false;
   }

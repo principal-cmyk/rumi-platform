@@ -96,8 +96,10 @@ The OpenRouter and channel lines depend on your own keys.
 
 ```bash
 node bot/whatsapp-bot.js            # or: node bin/rumi.js start
-node bot/workers/sqs-worker.js      # in a second terminal, for background jobs
+node bot/workers/sqs-worker.js      # in a second terminal, for background jobs (not with CHANNEL_DRIVER=baileys)
 ```
+
+With `CHANNEL_DRIVER=baileys` the worker runs inside the bot, because a linked device allows one process on the WhatsApp session, so there is no second terminal.
 
 The worker handles lesson plans, coaching reports, quiz reports, video and exam grading. With
 `QUEUE_DRIVER=bullmq` it takes its jobs from the local Redis (despite its name, it does not need AWS),

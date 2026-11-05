@@ -88,6 +88,18 @@ describe('baileys-connection', () => {
     expect(makeWASocket).not.toHaveBeenCalled();
   });
 
+  it('announces each socket it creates, because a listener left on an old one goes silently deaf', async () => {
+    jest.resetModules();
+    const { sock } = mockBaileysPackage();
+    const conn = require('../../bot/shared/services/messaging/baileys-connection');
+    const announced = jest.fn();
+    conn.events.on('socket', announced);
+    conn.getSocket().catch(() => {});
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(announced).toHaveBeenCalledWith(sock);
+  });
+
   it('getSocket() resolves only once "open" fires — not as soon as makeWASocket() returns', async () => {
     jest.resetModules();
     const { makeWASocket, sockEventHandlers } = mockBaileysPackage();

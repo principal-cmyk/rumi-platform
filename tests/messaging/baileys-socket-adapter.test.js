@@ -390,6 +390,61 @@ describe('attach()', () => {
     expect(typeof res.status).toBe('function');
   });
 
+  describe('after a reconnect', () => {
+    // Live bug: every reconnect makes a new socket, but the listener only ever sat on the first. After one network
+    // drop the bot reported "connected" and answered nothing, and WhatsApp still showed the teacher two ticks.
+    const EventEmitter = require('events');
+    const hi = (id) => ({
+      messages: [{
+        key: { remoteJid: '923001234567@s.whatsapp.net', id, fromMe: false },
+        messageTimestamp: 1700000010,
+        message: { conversation: 'hi bot' },
+      }],
+    });
+
+    async function attachWith(firstSock) {
+      jest.resetModules();
+      const events = new EventEmitter();
+      jest.doMock('../../bot/shared/utils/logger', () => ({ logToFile: jest.fn() }));
+      jest.doMock('../../bot/shared/storage/r2', () => ({ downloadFromR2: jest.fn(), extractKeyFromUrl: jest.fn() }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-connection', () => ({
+        getSocket: jest.fn().mockResolvedValue(firstSock), isConnected: jest.fn(), authDir: jest.fn(), events,
+      }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-channel.service', () => ({ _cacheIncomingMedia: jest.fn() }));
+      jest.doMock('../../bot/shared/services/messaging/baileys-lib', () => ({ loadBaileys: jest.fn().mockResolvedValue({ downloadMediaMessage: jest.fn() }) }));
+      const adapter = require('../../bot/shared/services/messaging/inbound/baileys-socket.adapter');
+      const dispatch = jest.fn().mockResolvedValue(undefined);
+      await adapter.attach(dispatch);
+      return { events, dispatch };
+    }
+
+    it('keeps receiving on the new socket', async () => {
+      const first = mockSock();
+      const { events, dispatch } = await attachWith(first);
+      const second = mockSock();
+      events.emit('socket', second);
+      await second.handlers['messages.upsert'](hi('after-reconnect'));
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it('survives repeated reconnects', async () => {
+      const { events, dispatch } = await attachWith(mockSock());
+      for (const id of ['a', 'b', 'c']) {
+        const next = mockSock();
+        events.emit('socket', next);
+        await next.handlers['messages.upsert'](hi(id));
+      }
+      expect(dispatch).toHaveBeenCalledTimes(3);
+    });
+
+    it('never listens to one socket twice, which would answer every message twice', async () => {
+      const first = mockSock();
+      const { events } = await attachWith(first);
+      events.emit('socket', first);
+      expect(first.ev.on.mock.calls.filter(([name]) => name === 'messages.upsert')).toHaveLength(1);
+    });
+  });
+
   it('skips messages that map to null (e.g. group chat) without calling dispatch', async () => {
     jest.resetModules();
     const sock = mockSock();

@@ -588,6 +588,7 @@ async function sendLanguageSelectionList(to, currentLanguage = 'en', region = nu
   } catch (error) {
     logToFile('Discord language picker: region lookup failed, using default set', { error: error.message });
   }
+  codes = require('../../config/supported-languages').offeredLanguages(codes);
 
   const rows = [
     { id: 'lang_auto', title: 'Auto-detect' },

@@ -353,6 +353,10 @@ async function connect(opts = {}) {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Every reconnect is a new socket. Anything that listens on a socket hears about each one here, or it goes on
+  // listening to a dead connection while the bot reports itself connected.
+  events.emit('socket', sock);
+
   return new Promise((resolve, reject) => {
     let settled = false;
 
