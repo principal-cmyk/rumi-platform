@@ -62,6 +62,19 @@ function authDir() {
 }
 
 let socketPromise = null;
+let reconnectFailures = 0;
+
+const MAX_RECONNECT_DELAY_MS = 60_000;
+
+/**
+ * The wait before reconnect attempt n, counted since the last good connection. The first is instant: WhatsApp forces
+ * a reconnect straight after pairing. After that it doubles to a one-minute ceiling: a network drop once produced
+ * about 20,000 attempts in a few minutes, and a storm like that from one number is what gets a number flagged.
+ */
+function reconnectDelayMs(attempt) {
+  if (attempt <= 0) return 0;
+  return Math.min(1000 * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
+}
 const connectionState = { connected: false };
 const events = new EventEmitter();
 
@@ -403,6 +416,7 @@ async function connect(opts = {}) {
       }
 
       if (connection === 'open') {
+        reconnectFailures = 0;
         connectionState.connected = true;
         logToFile('✅ Baileys: connected', {});
         events.emit('open');
@@ -427,12 +441,12 @@ async function connect(opts = {}) {
           if (!settled) { settled = true; reject(new Error('Baileys: logged out before connecting')); }
         } else {
           // Not a logout (network blip, the expected post-pairing "restart
-          // required", etc.) — reconnect. No exponential backoff / storm
-          // protection here by design: v1 targets local/dev quick-start, not
-          // hosted-at-scale resilience (see
-          // docs/onboarding/sandbox-production-design.md's out-of-scope list).
+          // required", etc.) — reconnect, paced by reconnectDelayMs().
+          const delayMs = reconnectDelayMs(reconnectFailures);
+          reconnectFailures += 1;
           socketPromise = null;
-          const reconnectPromise = getSocket(opts);
+          if (delayMs > 0) logToFile('Baileys: waiting before reconnecting', { delayMs, attempt: reconnectFailures });
+          const reconnectPromise = delayMs > 0 ? reconnectAfter(delayMs, opts) : getSocket(opts);
           if (!settled) {
             settled = true;
             reconnectPromise.then(resolve, reject);
@@ -443,6 +457,15 @@ async function connect(opts = {}) {
       }
     });
   });
+}
+
+/** Holds socketPromise for the wait, so a send during it joins this reconnect instead of opening a second socket. */
+function reconnectAfter(delayMs, opts) {
+  socketPromise = new Promise((resolve) => { setTimeout(resolve, delayMs); }).then(() => {
+    if (shuttingDown) throw new Error('Baileys: shutting down');
+    return connect(opts);
+  });
+  return socketPromise;
 }
 
 /** Lazily connects on first call; subsequent calls reuse the same connection. Resolves once actually open. */
@@ -512,6 +535,7 @@ async function close({ flushMs = 500, pendingTimeoutMs = 2000 } = {}) {
 /** Test-only: forces the next getSocket() call to reconnect from scratch. */
 function _resetForTests() {
   socketPromise = null;
+  reconnectFailures = 0;
   connectionState.connected = false;
   shuttingDown = false;
   lockHeld = false;
@@ -523,6 +547,7 @@ module.exports = {
   getSocket,
   isConnected,
   close,
+  reconnectDelayMs,
   authDir,
   events,
   lockPath,
